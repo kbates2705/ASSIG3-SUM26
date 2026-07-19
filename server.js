@@ -13,7 +13,21 @@ const { initDb, all, get, run } = require('./lib/db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
+app.use((req, res, next) => {
+  // ---- FIX 5 (part B): NO CONTENT SECURITY POLICY -----------------------
+  // There is no Content-Security-Policy header anywhere in this app, so the
+  // browser will run injected inline scripts and event handlers.
+  // Fix idea: send a restrictive CSP on every response (a small middleware,
+  //   added ABOVE the routes, is the natural place). This app keeps all of its
+  //   JS in /app.js and all CSS in /styles.css, so a 'self'-based policy with
+  //   no 'unsafe-inline' will not break anything it legitimately does.
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self';"
+  );
+  next();
+});   
+app.use(express.json());  
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -36,6 +50,25 @@ function currentUser(req) {
   const sid = parseCookies(req).sid;
   return sid && sessions.has(sid) ? sessions.get(sid) : null;
 }
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (m) => {
+    switch (m) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return m;
+    }
+  });
+} 
 
 // ---------------------------------------------------------------------------
 // HTML layout helper. All pages share this shell.
@@ -129,7 +162,7 @@ app.get('/search', (req, res) => {
   // The raw search term is echoed back into the HTML response, so whatever
   // the visitor typed is parsed by the browser as markup.
   // Fix idea: HTML-encode any untrusted value before it lands in the page.
-  const heading = `<h1>Search</h1><p class="note">Showing results for “${q}”</p>`;
+  const heading = `<h1>Search</h1><p class="note">Showing results for “${escapeHtml(q)}”</p>`;
 
   const bodyErr = error ? `<p class="error">Query error: ${error}</p>` : '';
   const list = rows.length ? `<div class="grid">${results}</div>` : '<p>No matches.</p>';
@@ -184,8 +217,16 @@ app.post('/login', (req, res) => {
   // on the page can read it via document.cookie and the browser attaches it
   // to cross-site requests.
   // Fix idea: add HttpOnly and SameSite (and Secure when served over HTTPS).
-  res.setHeader('Set-Cookie', `sid=${token}; Path=/`);
-  res.redirect('/me');
+  const cookieOptions = [
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Strict'
+  ];
+  if (req.secure) {
+    cookieOptions.push('Secure');
+  }
+  res.setHeader('Set-Cookie', `sid=${token}; ${cookieOptions.join('; ')}`);
+ res.redirect('/me');
 });
 
 app.get('/logout', (req, res) => {
@@ -235,8 +276,8 @@ app.get('/listing/:id', (req, res) => {
     ? comments
         .map(
           (c) => `<div class="comment">
-             <p class="comment-body">${c.body}</p>
-             <p class="comment-meta">— ${c.author}, ${c.created_at}</p>
+             <p class="comment-body">${escapeHtml(c.body)}</p>
+             <p class="comment-meta">— ${escapeHtml(c.author)}, ${escapeHtml(c.created_at)}</p>
            </div>`
         )
         .join('')
@@ -246,9 +287,9 @@ app.get('/listing/:id', (req, res) => {
   const body = `
     <a class="back" href="/">← all swaps</a>
     <h1>${l.title}</h1>
-    <p class="species">${l.species}</p>
-    <p class="meta">📍 ${l.location} · posted ${l.created_at}</p>
-    <p class="desc">${l.description}</p>
+    <p class="species">${escapeHtml(l.species)}</p>
+    <p class="meta">📍 ${escapeHtml(l.location)} · posted ${escapeHtml(l.created_at)}</p>
+    <p class="desc">${escapeHtml(l.description)}</p>
 
     <div id="share-banner" data-listing="${l.id}"></div>
 
