@@ -135,18 +135,17 @@ app.get('/search', (req, res) => {
   // Fix idea: bind the search value with a "?" placeholder, and choose the
   //   ORDER BY expression from a fixed allow-list (you cannot bind an
   //   identifier the way you bind a value).
-  const sql =
-    `SELECT id, title, species, location FROM listings ` +
-    `WHERE title LIKE '%${q}%' OR species LIKE '%${q}%' ` +
-    `ORDER BY ${sort}`;
-
+  const sql = `SELECT id, title, species, location FROM listings
+    WHERE title LIKE '%${q}%' OR species LIKE '%${q}%'
+    ORDER BY ${sort}`;
   let rows = [];
   let error = null;
   try {
     rows = all(sql);
   } catch (e) {
+    console.error('search query failed:', e);
     error = e.message;
-  }
+  } 
 
   const results = rows
     .map(
@@ -197,16 +196,13 @@ app.post('/login', (req, res) => {
   // (e.g. a username of  curator' --  comments the password check away).
   // Fix idea: use a parameterized query so inputs are treated as pure data.
   const sql =
-    `SELECT id, username FROM users ` +
-    `WHERE username = '${username}' AND password = '${password}'`;
-
+    `SELECT id, username FROM users WHERE username = '${username}' AND password = '${password}'`;
   let user = null;
   try {
     user = get(sql);
   } catch (e) {
-    // fall through to failure
+    console.error('login query failed:', e);
   }
-
   if (!user) return res.redirect('/login?failed=1');
 
   const token = crypto.randomBytes(16).toString('hex');
